@@ -122,10 +122,17 @@ commands:
             gcloud --quiet container clusters get-credentials << parameters.cluster >>
             source workspace/kubectl_deployment_directories
             :> new_deployments
+            perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
             cat workspace/requested_containers | while read container; do
               find ${kubectl_deployment_directories[$container]} -type f -name '*.tmpl.yaml' | while read line; do
+                if grep -E "^kind:\s*Job\s*$" $line; then
+                  jobname=$(grep -Pzo $perl_regexp_k8s_name_pattern $line)
+                  if kubectl get jobs | grep "$jobname"; then
+                    kubectl delete jobs/"$jobname"
+                  fi
+                fi
                 cat $line | sed -f workspace/sed_subber | kubectl apply -f -
-                (grep -Pzo 'kind:\s*Deployment\s*\n\s*metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)' $line || true) >> new_deployments
+                (grep -Pzo "kind:\s*Deployment\s*\n\s*$perl_regexp_k8s_name_pattern" $line || true) >> new_deployments
               done
             done
             cat new_deployments | while read deployment_name; do
