@@ -7,10 +7,19 @@ workflows:
   btd:
     jobs:
       - orb-tools/publish:
-          orb-path: src/orb.yml
-          orb-ref: nivanorge/niva-google-cloud-orb.@dev:${CIRCLE_BRANCH}
+          orb-path: src/niva-google-cloud-orb.yml
+          orb-ref: nivanorge/niva-google-cloud-orb@dev:${CIRCLE_BRANCH}
           publish-token-variable: "$CIRCLECI_DEV_API_TOKEN"
           validate: true
+          filters:
+            branches:
+              only: dev
+      - orb-tools/increment:
+          orb-path: src/niva-google-cloud-orb.yml
+          orb-ref: nivanorge/niva-google-cloud-orb
+          publish-token-variable: "$CIRCLECI_DEV_API_TOKEN"
+          validate: true
+          segment: patch
           filters:
             branches:
               only: master
