@@ -41,6 +41,9 @@ commands:
       gcloud-json-token:
         type: string
         default: "gcloud-service-key.json"
+      tag:
+        type: string
+        default: "latest"
     steps:
       - run:
           name: "Retrieve cached images"
@@ -51,7 +54,7 @@ commands:
             gcloud --quiet auth configure-docker
             cat workspace/requested_containers | while read container; do
               if gcloud container images list-tags "${<< parameters.container-registry >>}-$container" | grep latest; then
-                docker pull "${<< parameters.container-registry >>}-$container:latest" | grep -e 'Pulling from' -e Digest -e Status -e Error
+                docker pull "${<< parameters.container-registry >>}-$container:<< parameters.tag >>" | grep -e 'Pulling from' -e Digest -e Status -e Error
               fi
             done
   build_containers:
