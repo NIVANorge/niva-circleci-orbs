@@ -94,8 +94,7 @@ commands:
             set -o nounset
             source circle_ci_files/image_names
             source circle_ci_files/docker_directories
-            mkdir docker-cache
-            :>sed_subber
+            :>circle_ci_files/sed_subber
             cat circle_ci_files/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
               if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
@@ -106,7 +105,7 @@ commands:
                 docker build --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
                 --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
               fi
-              echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
+              echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
             done
   push_containers:
     description: "A command to push containers, it expects one file in the workspace: all_containers"
