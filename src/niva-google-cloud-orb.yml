@@ -1,6 +1,16 @@
 version: "2.1"
 description: "an orb used by NIVA projects to test code and publish code to a k8s cluster in the google cloud"
 
+fast-checkout: &fast-checkout
+  attach_workspace:
+    at: /root
+
+persist-checkout: &persist-checkout
+  persist_to_workspace:
+    root: /root
+    paths:
+      - project
+
 executors:
   google-sdk-container:
     docker:
@@ -38,7 +48,7 @@ commands:
             # Detect which of the parent hashes has containers in the nivatest registry
             for hash in $(git log --pretty=%P -n 1 $CIRCLE_SHA1); do
               shorthash=$(git rev-parse --short $hash)
-              container=$(head -n 1 workspace/all_containers)
+              container=$(head -n 1 circle_ci_files/all_containers)
               if gcloud container images list-tags "$TEST_CONTAINER_REGISTRY-$container" | grep $shorthash; then
                 echo "export SHORT_GIT_HASH=$shorthash" >> $BASH_ENV
               fi
@@ -61,7 +71,7 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file test-gcloud-service-key.json
             gcloud --quiet auth configure-docker
-            cat workspace/<< parameters.container-file >> | while read container; do
+            cat circle_ci_files/<< parameters.container-file >> | while read container; do
               if gcloud container images list-tags "${TEST_CONTAINER_REGISTRY}-$container" | grep << parameters.tag >>; then
                 docker pull "${TEST_CONTAINER_REGISTRY}-$container:<< parameters.tag >>" | grep -e 'Pulling from' -e Digest -e Status -e Error
               fi
@@ -82,11 +92,11 @@ commands:
           command: |
             set -x
             set -o nounset
-            source workspace/image_names
-            source workspace/docker_directories
+            source circle_ci_files/image_names
+            source circle_ci_files/docker_directories
             mkdir docker-cache
             :>sed_subber
-            cat workspace/<< parameters.container-file >> | while read container; do
+            cat circle_ci_files/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
               if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
                 docker build --cache-from "$TEST_CONTAINER_REGISTRY-$container:latest" \
@@ -115,7 +125,7 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file << parameters.gcloud-json-token >>
             gcloud --quiet auth configure-docker
-            cat workspace/all_containers | while read container; do
+            cat circle_ci_files/all_containers | while read container; do
               docker push "${<< parameters.container-registry >>}-$container:$SHORT_GIT_HASH" | grep -e repository -e digest -e Error
               docker push "${<< parameters.container-registry >>}-$container:latest" | grep -e repository -e digest -e Error
             done
@@ -141,10 +151,10 @@ commands:
             gcloud --quiet config set compute/zone $GCLOUD_COMPUTE_ZONE
             gcloud --quiet container clusters get-credentials ${<< parameters.cluster >>}
             kubectl apply -f k8s/config/<< parameters.project >>/nivacloud-config-map.yaml
-            source workspace/kubectl_deployment_directories
+            source circle_ci_files/kubectl_deployment_directories
             :> new_deployments
             perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
-            cat workspace/all_containers | while read container; do
+            cat circle_ci_files/all_containers | while read container; do
               find ${kubectl_deployment_directories[$container]} -type f -name '*.tmpl.yaml' | while read line; do
                 if grep -E "^kind:\s*Job\s*$" $line; then
                   jobname=$(grep -Pzo $perl_regexp_k8s_name_pattern $line)
@@ -152,7 +162,7 @@ commands:
                     kubectl delete jobs/"$jobname"
                   fi
                 fi
-                cat $line | sed -f workspace/sed_subber | kubectl apply -f -
+                cat $line | sed -f circle_ci_files/sed_subber | kubectl apply -f -
                 (grep -Pzo "kind:\s*Deployment\s*\n\s*$perl_regexp_k8s_name_pattern" $line || true) >> new_deployments
               done
             done
@@ -165,33 +175,24 @@ jobs:
     description: "This command builds the containers listed in the container-file, defaults to file called: all_containers"
     executor: google-sdk-container
     steps:
-      - checkout
+      - *fast-checkout
       - setup_remote_docker
-      - attach_workspace:
-          at: workspace
       - build_containers:
           container-file: "changed_containers"
   build_and_push_to_nivatest:
     description: "This command builds all containers and pushes them to nivatest"
     executor: google-sdk-container
     steps:
-      - checkout
+      - *fast-checkout
       - setup_remote_docker
-      - attach_workspace:
-          at: workspace
       - build_containers
       - push_containers
-      - persist_to_workspace:
-          root: .
-          paths:
-            - sed_subber
+      - *persist-checkout
   copy_containers_to_nivaprod:
     executor: google-sdk-container
     steps:
-      - checkout
+      - *fast-checkout
       - setup_remote_docker
-      - attach_workspace:
-          at: workspace
       - setup_container_transfer
       - pull_containers:
           tag: $SHORT_GIT_HASH
@@ -200,27 +201,22 @@ jobs:
           command: |
             set -x
             set -o nounset
-            source workspace/image_names
-            :>sed_subber
-            cat workspace/all_containers | while read container; do
+            source circle_ci_files/image_names
+            :>circle_ci_files/sed_subber
+            cat circle_ci_files/all_containers | while read container; do
               docker tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" "$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH"
               docker rmi "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH"
               docker tag "$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" "$PROD_CONTAINER_REGISTRY-$container:latest"
-              echo "s|${image_names[$container]}|$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
+              echo "s|${image_names[$container]}|$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
             done
       - push_containers:
           container-registry: PROD_CONTAINER_REGISTRY
           gcloud-json-token: "prod-gcloud-service-key.json"
-      - persist_to_workspace:
-          root: .
-          paths:
-            - sed_subber
+      - *persist-checkout
   deploy_to_nivatest:
     executor: google-sdk-container
     steps:
-      - checkout
-      - attach_workspace:
-          at: workspace
+      - *fast-checkout
       - deploy_to_k8s:
           service_key: NIVATEST_SERVICE_KEY
           project: NIVATEST_PROJECT_NAME
@@ -228,9 +224,7 @@ jobs:
   deploy_to_nivaprod:
     executor: google-sdk-container
     steps:
-      - checkout
-      - attach_workspace:
-          at: workspace
+      - *fast-checkout
       - deploy_to_k8s:
           service_key: NIVAPROD_SERVICE_KEY
           project: NIVAPROD_PROJECT_NAME
