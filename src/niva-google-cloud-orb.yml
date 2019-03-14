@@ -32,7 +32,7 @@ commands:
             echo 'export REPONAME=$(echo "github-$CIRCLE_PROJECT_USERNAME-$CIRCLE_PROJECT_REPONAME" | tr '[:upper:]' '[:lower:]')' >> $BASH_ENV
             echo 'export CONTAINER_REGISTRY=eu.gcr.io/$NIVAPROD_PROJECT_NAME/$REPONAME' >> $BASH_ENV
   pull_containers:
-    description: "A command to build containers, it expects one file in the workspace: requested_containers. This file
+    description: "A command to build containers, it expects one file in the workspace: changed_containers. This file
     should have a container name on each line"
     parameters:
       container-registry:
@@ -52,14 +52,18 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file << parameters.gcloud-json-token >>
             gcloud --quiet auth configure-docker
-            cat workspace/requested_containers | while read container; do
+            cat workspace/changed_containers | while read container; do
               if gcloud container images list-tags "${<< parameters.container-registry >>}-$container" | grep latest; then
                 docker pull "${<< parameters.container-registry >>}-$container:<< parameters.tag >>" | grep -e 'Pulling from' -e Digest -e Status -e Error
               fi
             done
   build_containers:
-    description: "A command to build containers, it expects three files in the workspace: requested_containers,
+    description: "A command to build containers, it expects three files in the workspace: changed_containers,
     image_names and docker_directories. It also expects the $CONTAINER_REGISTRY and $SHORT_GIT_HASH to be set."
+    parameters:
+      container-file:
+        type: string
+        default: "changed_containers"
     steps:
       - setup_nivatest
       - pull_containers
@@ -72,7 +76,7 @@ commands:
             source workspace/docker_directories
             mkdir docker-cache
             :>sed_subber
-            cat workspace/requested_containers | while read container; do
+            cat workspace/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
               if docker images -q "$CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
                 docker build --cache-from "$CONTAINER_REGISTRY-$container:latest" \
@@ -85,7 +89,7 @@ commands:
               echo "s|${image_names[$container]}|$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
             done
   push_containers:
-    description: "A command to push containers, it expects one file in the workspace: requested_containers"
+    description: "A command to push containers, it expects one file in the workspace: changed_containers"
     parameters:
       container-registry:
         type: env_var_name
@@ -101,13 +105,13 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file << parameters.gcloud-json-token >>
             gcloud --quiet auth configure-docker
-            cat workspace/requested_containers | while read container; do
+            cat workspace/changed_containers | while read container; do
               docker push "${<< parameters.container-registry >>}-$container:$SHORT_GIT_HASH" | grep -e repository -e digest -e Error
               docker push "${<< parameters.container-registry >>}-$container:latest" | grep -e repository -e digest -e Error
             done
   deploy_to_k8s:
     description: "A deployment command that can deploy kubernetes deployments to a cluster in a google project. It
-    requires three files to be present in the workspace: kubectl_deployment_directories, requested_containers and sed_subber"
+    requires three files to be present in the workspace: kubectl_deployment_directories, changed_containers and sed_subber"
     parameters:
       project:
         type: string
@@ -127,7 +131,7 @@ commands:
             source workspace/kubectl_deployment_directories
             :> new_deployments
             perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
-            cat workspace/requested_containers | while read container; do
+            cat workspace/changed_containers | while read container; do
               find ${kubectl_deployment_directories[$container]} -type f -name '*.tmpl.yaml' | while read line; do
                 if grep -E "^kind:\s*Job\s*$" $line; then
                   jobname=$(grep -Pzo $perl_regexp_k8s_name_pattern $line)
