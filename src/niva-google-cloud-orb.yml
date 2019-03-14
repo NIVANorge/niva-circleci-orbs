@@ -88,22 +88,22 @@ commands:
             :>sed_subber
             cat workspace/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
-              if docker images -q "$CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
-                docker build --cache-from "$CONTAINER_REGISTRY-$container:latest" \
-                --tag "$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
-                --tag "$CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+              if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
+                docker build --cache-from "$TEST_CONTAINER_REGISTRY-$container:latest" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
               else
-                docker build --tag "$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
-                --tag "$CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+                docker build --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
               fi
-              echo "s|${image_names[$container]}|$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
+              echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
             done
   push_containers:
     description: "A command to push containers, it expects one file in the workspace: all_containers"
     parameters:
       container-registry:
         type: env_var_name
-        default: CONTAINER_REGISTRY
+        default: TEST_CONTAINER_REGISTRY
       gcloud-json-token:
         type: string
         default: "test-gcloud-service-key.json"
