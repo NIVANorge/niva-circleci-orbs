@@ -1,6 +1,16 @@
 version: "2.1"
 description: "an orb used by NIVA projects to test code and publish code to a k8s cluster in the google cloud"
 
+fast-checkout: &fast-checkout
+  attach_workspace:
+    at: /root
+
+persist-checkout: &persist-checkout
+  persist_to_workspace:
+    root: /root
+    paths:
+      - project
+
 executors:
   google-sdk-container:
     docker:
@@ -11,50 +21,69 @@ commands:
     description: "A command to configure google cloud to use the nivatest-environment"
     steps:
       - run:
-          name: "Decode and write nivatest service-account key into a json file"
+          name: "Setup nivatest"
           command: |
             set -o nounset
-            echo $NIVATEST_SERVICE_KEY | base64 --decode --ignore-garbage > gcloud-service-key.json
+            echo $NIVATEST_SERVICE_KEY | base64 --decode --ignore-garbage > test-gcloud-service-key.json
             set -x
             echo 'export SHORT_GIT_HASH=$(git rev-parse --short $CIRCLE_SHA1)' >> $BASH_ENV
             echo 'export REPONAME=$(echo "github-$CIRCLE_PROJECT_USERNAME-$CIRCLE_PROJECT_REPONAME" | tr '[:upper:]' '[:lower:]')' >> $BASH_ENV
-            echo 'export CONTAINER_REGISTRY=eu.gcr.io/$NIVATEST_PROJECT_NAME/$REPONAME' >> $BASH_ENV
-  setup_nivaprod:
-    description: "A command to configure google cloud to use the nivatest-environment"
+            echo 'export TEST_CONTAINER_REGISTRY=eu.gcr.io/$NIVATEST_PROJECT_NAME/$REPONAME' >> $BASH_ENV
+  setup_container_transfer:
+    description: "A command to setup both the nivatest and nivaprod environment"
     steps:
       - run:
-          name: "Decode and write nivaprod service-account key into a json file"
+          name: "Setup environment variables for nivaprod and nivatest"
           command: |
             set -o nounset
-            echo $NIVAPROD_SERVICE_KEY | base64 --decode --ignore-garbage > gcloud-service-key.json
+            echo $NIVATEST_SERVICE_KEY | base64 --decode --ignore-garbage > test-gcloud-service-key.json
+            echo $NIVAPROD_SERVICE_KEY | base64 --decode --ignore-garbage > prod-gcloud-service-key.json
             set -x
-            echo 'export SHORT_GIT_HASH=$(git rev-parse --short $CIRCLE_SHA1)' >> $BASH_ENV
             echo 'export REPONAME=$(echo "github-$CIRCLE_PROJECT_USERNAME-$CIRCLE_PROJECT_REPONAME" | tr '[:upper:]' '[:lower:]')' >> $BASH_ENV
-            echo 'export CONTAINER_REGISTRY=eu.gcr.io/$NIVAPROD_PROJECT_NAME/$REPONAME' >> $BASH_ENV
+            echo 'export PROD_CONTAINER_REGISTRY=eu.gcr.io/$NIVAPROD_PROJECT_NAME/$REPONAME' >> $BASH_ENV
+            echo 'export TEST_CONTAINER_REGISTRY=eu.gcr.io/$NIVATEST_PROJECT_NAME/$REPONAME' >> $BASH_ENV
+            source $BASH_ENV
+            gcloud auth activate-service-account --key-file test-gcloud-service-key.json
+            gcloud --quiet auth configure-docker
+            # Detect which of the parent hashes has containers in the nivatest registry
+            for hash in $(git log --pretty=%P -n 1 $CIRCLE_SHA1); do
+              shorthash=$(git rev-parse --short $hash)
+              container=$(head -n 1 circle_ci_files/all_containers)
+              if gcloud container images list-tags "$TEST_CONTAINER_REGISTRY-$container" | grep $shorthash; then
+                echo "export SHORT_GIT_HASH=$shorthash" >> $BASH_ENV
+              fi
+            done
   pull_containers:
-    description: "A command to build containers, it expects one file in the workspace: requested_containers. This file
+    description: "A command to pull containers, it expects one file in the workspace: all_containers. This file
     should have a container name on each line"
     parameters:
-      container-registry:
-        type: env_var_name
-        default: CONTAINER_REGISTRY
-      gcloud-json-token:
+      container-file:
         type: string
-        default: "gcloud-service-key.json"
+        default: "all_containers"
+      tag:
+        type: string
+        default: "latest"
     steps:
       - run:
           name: "Retrieve cached images"
           command: |
             set -x
             set -o nounset
-            gcloud auth activate-service-account --key-file << parameters.gcloud-json-token >>
+            gcloud auth activate-service-account --key-file test-gcloud-service-key.json
             gcloud --quiet auth configure-docker
-            cat workspace/requested_containers | while read container; do
-              docker pull "${<< parameters.container-registry >>}-$container:latest" | grep -e 'Pulling from' -e Digest -e Status -e Error
+            cat circle_ci_files/<< parameters.container-file >> | while read container; do
+              if gcloud container images list-tags "${TEST_CONTAINER_REGISTRY}-$container" | grep << parameters.tag >>; then
+                docker pull "${TEST_CONTAINER_REGISTRY}-$container:<< parameters.tag >>" | grep -e 'Pulling from' -e Digest -e Status -e Error
+              fi
             done
   build_containers:
-    description: "A command to build containers, it expects three files in the workspace: requested_containers,
-    image_names and docker_directories. It also expects the $CONTAINER_REGISTRY and $SHORT_GIT_HASH to be set."
+    description: "A command to build containers, it expects three files in the workspace: all_containers,
+    image_names and docker_directories. It also expects the $CONTAINER_REGISTRY and $SHORT_GIT_HASH to be set.
+    Building containers is always done in the test environment."
+    parameters:
+      container-file:
+        type: string
+        default: "all_containers"
     steps:
       - setup_nivatest
       - pull_containers
@@ -63,26 +92,30 @@ commands:
           command: |
             set -x
             set -o nounset
-            source workspace/image_names
-            source workspace/docker_directories
-            mkdir docker-cache
-            :>sed_subber
-            cat workspace/requested_containers | while read container; do
+            source circle_ci_files/image_names
+            source circle_ci_files/docker_directories
+            :>circle_ci_files/sed_subber
+            cat circle_ci_files/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
-              docker build --cache-from "$CONTAINER_REGISTRY-$container:latest" \
-              --tag "$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
-              --tag "$CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
-              echo "s|${image_names[$container]}|$CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> sed_subber
+              if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
+                docker build --cache-from "$TEST_CONTAINER_REGISTRY-$container:latest" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+              else
+                docker build --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+              fi
+              echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
             done
   push_containers:
-    description: "A command to push containers, it expects one file in the workspace: requested_containers"
+    description: "A command to push containers, it expects one file in the workspace: all_containers"
     parameters:
       container-registry:
         type: env_var_name
-        default: CONTAINER_REGISTRY
+        default: TEST_CONTAINER_REGISTRY
       gcloud-json-token:
         type: string
-        default: "gcloud-service-key.json"
+        default: "test-gcloud-service-key.json"
     steps:
       - run:
           name: "Push images"
@@ -91,37 +124,109 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file << parameters.gcloud-json-token >>
             gcloud --quiet auth configure-docker
-            cat workspace/requested_containers | while read container; do
+            cat circle_ci_files/all_containers | while read container; do
               docker push "${<< parameters.container-registry >>}-$container:$SHORT_GIT_HASH" | grep -e repository -e digest -e Error
               docker push "${<< parameters.container-registry >>}-$container:latest" | grep -e repository -e digest -e Error
             done
   deploy_to_k8s:
     description: "A deployment command that can deploy kubernetes deployments to a cluster in a google project. It
-    requires three files to be present in the workspace: kubectl_deployment_directories, requested_containers and sed_subber"
+    requires three files to be present in the workspace: kubectl_deployment_directories, all_containers and sed_subber.
+    Additionally the k8s folder in the repo should have a directory named after the cloud project and a file called
+    config-map.yaml in each project folder. These will be automatically applied during the deployment."
     parameters:
+      service_key:
+        type: env_var_name
       project:
-        type: string
+        type: env_var_name
       cluster:
-        type: string
+        type: env_var_name
     steps:
       - run:
           name: Deploy
           command: |
-            set -x
             set -o nounset
+            echo ${<< parameters.service_key >>} | base64 --decode --ignore-garbage > gcloud-service-key.json
+            set -x
             gcloud auth activate-service-account --key-file gcloud-service-key.json
-            gcloud --quiet config set project << parameters.project >>
+            gcloud --quiet config set project ${<< parameters.project >>}
             gcloud --quiet config set compute/zone $GCLOUD_COMPUTE_ZONE
-            gcloud --quiet container clusters get-credentials << parameters.cluster >>
-            source workspace/kubectl_deployment_directories
+            gcloud --quiet container clusters get-credentials ${<< parameters.cluster >>}
+            kubectl apply -f k8s/config/${<< parameters.project >>}/config-map.yaml
+            source circle_ci_files/kubectl_deployment_directories
             :> new_deployments
-            cat workspace/requested_containers | while read container; do
+            perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
+            cat circle_ci_files/all_containers | while read container; do
               find ${kubectl_deployment_directories[$container]} -type f -name '*.tmpl.yaml' | while read line; do
-                cat $line | sed -f workspace/sed_subber | kubectl apply -f -
-                (grep -Pzo 'kind:\s*Deployment\s*\n\s*metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)' $line || true) >> new_deployments
+                if grep -E "^kind:\s*Job\s*$" $line; then
+                  jobname=$(grep -Pzo $perl_regexp_k8s_name_pattern $line)
+                  if kubectl get jobs | grep "$jobname"; then
+                    kubectl delete jobs/"$jobname"
+                  fi
+                fi
+                cat $line | sed -f circle_ci_files/sed_subber | kubectl apply -f -
+                (grep -Pzo "kind:\s*Deployment\s*\n\s*$perl_regexp_k8s_name_pattern" $line || true) >> new_deployments
               done
             done
             cat new_deployments | while read deployment_name; do
               deployment_namespace=$(kubectl get deployment --all-namespaces | grep -oP "\w*(?=\s*$deployment_name)")
               kubectl --namespace="$deployment_namespace" rollout status deployment "$deployment_name"
             done
+jobs:
+  build_containers:
+    description: "This command builds the containers listed in the container-file, defaults to file called: all_containers"
+    executor: google-sdk-container
+    steps:
+      - *fast-checkout
+      - setup_remote_docker
+      - build_containers:
+          container-file: "changed_containers"
+  build_and_push_to_nivatest:
+    description: "This command builds all containers and pushes them to nivatest"
+    executor: google-sdk-container
+    steps:
+      - *fast-checkout
+      - setup_remote_docker
+      - build_containers
+      - push_containers
+      - *persist-checkout
+  copy_containers_to_nivaprod:
+    executor: google-sdk-container
+    steps:
+      - *fast-checkout
+      - setup_remote_docker
+      - setup_container_transfer
+      - pull_containers:
+          tag: $SHORT_GIT_HASH
+      - run:
+          name: "Re-tag images from test with prod tags"
+          command: |
+            set -x
+            set -o nounset
+            source circle_ci_files/image_names
+            :>circle_ci_files/sed_subber
+            cat circle_ci_files/all_containers | while read container; do
+              docker tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" "$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH"
+              docker rmi "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH"
+              docker tag "$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" "$PROD_CONTAINER_REGISTRY-$container:latest"
+              echo "s|${image_names[$container]}|$PROD_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
+            done
+      - push_containers:
+          container-registry: PROD_CONTAINER_REGISTRY
+          gcloud-json-token: "prod-gcloud-service-key.json"
+      - *persist-checkout
+  deploy_to_nivatest:
+    executor: google-sdk-container
+    steps:
+      - *fast-checkout
+      - deploy_to_k8s:
+          service_key: NIVATEST_SERVICE_KEY
+          project: NIVATEST_PROJECT_NAME
+          cluster: NIVATEST_CLUSTER_NAME
+  deploy_to_nivaprod:
+    executor: google-sdk-container
+    steps:
+      - *fast-checkout
+      - deploy_to_k8s:
+          service_key: NIVAPROD_SERVICE_KEY
+          project: NIVAPROD_PROJECT_NAME
+          cluster: NIVAPROD_CLUSTER_NAME
