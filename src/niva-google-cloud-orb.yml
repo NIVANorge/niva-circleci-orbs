@@ -154,7 +154,7 @@ commands:
             kubectl apply -f k8s/config/${<< parameters.project >>}/config-map.yaml
             source circle_ci_files/kubectl_deployment_directories
             :> new_deployments
-            perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
+            perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w+\-*\w*\s*\n)'
             cat circle_ci_files/all_containers | while read container; do
               find ${kubectl_deployment_directories[$container]} -type f -name '*.tmpl.yaml' | while read line; do
                 if grep -E "^kind:\s*Job\s*$" $line; then
@@ -168,7 +168,7 @@ commands:
               done
             done
             cat new_deployments | while read deployment_name; do
-              deployment_namespace=$(kubectl get deployment --all-namespaces | grep -oP "\w*(?=\s*$deployment_name)")
+              deployment_namespace=$(kubectl get deployment --all-namespaces | grep -oP "\w*(?=\s+${deployment_name}\s+)")
               kubectl --namespace="$deployment_namespace" rollout status deployment "$deployment_name"
             done
 jobs:
