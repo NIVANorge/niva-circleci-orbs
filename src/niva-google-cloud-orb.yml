@@ -130,7 +130,9 @@ commands:
             done
   deploy_to_k8s:
     description: "A deployment command that can deploy kubernetes deployments to a cluster in a google project. It
-    requires three files to be present in the workspace: kubectl_deployment_directories, all_containers and sed_subber"
+    requires three files to be present in the workspace: kubectl_deployment_directories, all_containers and sed_subber.
+    Additionally the k8s folder in the repo should have a directory named after the cloud project and a file called
+    config-map.yaml in each project folder. These will be automatically applied during the deployment."
     parameters:
       service_key:
         type: env_var_name
@@ -149,7 +151,7 @@ commands:
             gcloud --quiet config set project ${<< parameters.project >>}
             gcloud --quiet config set compute/zone $GCLOUD_COMPUTE_ZONE
             gcloud --quiet container clusters get-credentials ${<< parameters.cluster >>}
-            kubectl apply -f k8s/config/${<< parameters.project >>}/nivacloud-config-map.yaml
+            kubectl apply -f k8s/config/${<< parameters.project >>}/config-map.yaml
             source circle_ci_files/kubectl_deployment_directories
             :> new_deployments
             perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w*\-*\w*\s*\n)'
