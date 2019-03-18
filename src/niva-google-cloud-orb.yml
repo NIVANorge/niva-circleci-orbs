@@ -14,7 +14,7 @@ persist-checkout: &persist-checkout
 executors:
   google-sdk-container:
     docker:
-      - image: google/cloud-sdk:237.0.0
+      - image: google/cloud-sdk:238.0.0
 
 commands:
   setup_nivatest:
