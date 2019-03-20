@@ -14,7 +14,7 @@ persist-checkout: &persist-checkout
 executors:
   google-sdk-container:
     docker:
-      - image: google/cloud-sdk:238.0.0
+      - image: google/cloud-sdk:latest
 
 commands:
   setup_nivatest:
@@ -169,10 +169,10 @@ commands:
                 (grep -Pzo "kind:\s*Deployment\s*\n\s*$perl_regexp_k8s_name_pattern" $line || true) >> new_deployments
               done
             done
-            cat new_deployments | while read deployment_name; do
-              deployment_namespace=$(kubectl get deployment --all-namespaces | grep -oP "\w*(?=\s+${deployment_name}\s+)")
-              kubectl --namespace="$deployment_namespace" rollout status deployment "$deployment_name"
-            done
+#            cat new_deployments | while read deployment_name; do
+#              deployment_namespace=$(kubectl get deployment --all-namespaces | grep -oP "\w*(?=\s+${deployment_name}\s+)")
+#              kubectl --namespace="$deployment_namespace" rollout status deployment "$deployment_name"
+#            done
 jobs:
   build_containers:
     description: "This command builds the containers listed in the container-file, defaults to file called: all_containers"
