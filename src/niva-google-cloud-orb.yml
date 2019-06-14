@@ -15,8 +15,46 @@ executors:
   google-sdk-container:
     docker:
       - image: google/cloud-sdk:latest
+  linux-machine:
+    machine:
+      image: ubuntu-1604:201903-01
 
 commands:
+  install_gcloud:
+    description: 'install gcloud, instructions taken from: https://cloud.google.com/sdk/docs/quickstart-debian-ubuntu'
+    steps:
+      - run:
+          name: "Install gcloud"
+          command: |
+            set -x
+            set -o nounset
+            # Add the Cloud SDK distribution URI as a package source
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+
+            # Import the Google Cloud Platform public key
+            curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+
+            # Update the package list and install the Cloud SDK
+            sudo apt-get update && sudo apt-get install google-cloud-sdk
+  run_pytest_docker:
+    description: "Run 'pytest -m docker'"
+    steps:
+      - run:
+          name: Run 'pytest -m docker'
+          command: |
+            set -x
+            set -o nounset
+            gcloud auth activate-service-account --key-file test-gcloud-service-key.json
+            gcloud --quiet auth configure-docker
+            set -x
+            set -o nounset
+            pyenv local 3.6.5 2.7.12
+            python3 -m venv venv
+            . venv/bin/activate
+            pip install -r requirements.txt
+            pip install .
+            sed -i -f circle_ci_files/sed_subber_docker_compose $(grep -oP "'--docker-compose'\s'\K([^']*)(?=')" pytest.ini)
+            pytest -m docker
   setup_nivatest:
     description: "A command to configure google cloud to use the nivatest-environment"
     steps:
@@ -95,6 +133,7 @@ commands:
             source circle_ci_files/image_names
             source circle_ci_files/docker_directories
             :>circle_ci_files/sed_subber
+            :>circle_ci_files/sed_subber_docker_compose
             cat circle_ci_files/<< parameters.container-file >> | while read container; do
               echo "Building: $container from directory: ${docker_directories[$container]}"
               if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
@@ -106,6 +145,7 @@ commands:
                 --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
               fi
               echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
+              echo "s|build: ${docker_directories[$container]}|image: $TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber_docker_compose
             done
   push_containers:
     description: "A command to push containers, it expects one file in the workspace: all_containers"
@@ -176,6 +216,16 @@ commands:
 #              kubectl --namespace="$deployment_namespace" rollout status deployment "$deployment_name"
 #            done
 jobs:
+  build_containers_and_run_pytest_on_machine:
+    description: "This command builds the containers listed in the container-file, and runs 'pytest -m docker'"
+    executor: linux-machine
+    steps:
+      - attach_workspace:
+          at: /home/circleci
+      - install_gcloud
+      - build_containers:
+          container-file: "changed_containers"
+      - run_pytest_docker
   build_containers:
     description: "This command builds the containers listed in the container-file, defaults to file called: all_containers"
     executor: google-sdk-container
