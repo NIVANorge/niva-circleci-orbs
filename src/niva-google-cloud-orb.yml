@@ -139,10 +139,12 @@ commands:
               if docker images -q "$TEST_CONTAINER_REGISTRY-$container:latest" | grep -E .+; then
                 docker build --cache-from "$TEST_CONTAINER_REGISTRY-$container:latest" \
                 --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
-                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} \
+                --build-arg="GIT_COMMIT_ID=$SHORT_GIT_HASH" | cat
               else
                 docker build --tag "$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH" \
-                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} | cat
+                --tag "$TEST_CONTAINER_REGISTRY-$container:latest" ${docker_directories[$container]} \
+                --build-arg="GIT_COMMIT_ID=$SHORT_GIT_HASH" | cat
               fi
               echo "s|${image_names[$container]}|$TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber
               echo "s|build: ${docker_directories[$container]}|image: $TEST_CONTAINER_REGISTRY-$container:$SHORT_GIT_HASH|g" >> circle_ci_files/sed_subber_docker_compose
