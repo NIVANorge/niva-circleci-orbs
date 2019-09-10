@@ -196,6 +196,11 @@ commands:
             if [ -e "k8s/config/${<< parameters.project >>}/config-map.yaml" ]; then
                 kubectl apply -f k8s/config/${<< parameters.project >>}/config-map.yaml
             fi
+            if [ -d "/k8s/storage" ]; then
+              for f in "/k8s/storage/*"; do
+                kubectl apply -f $f
+              done
+            fi
             source circle_ci_files/kubectl_deployment_directories
             :> new_deployments
             perl_regexp_k8s_name_pattern='metadata:\n\s*name:\s*\K(\w+\-*\w*\s*\n)'
