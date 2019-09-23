@@ -92,7 +92,7 @@ commands:
               fi
             done
             source $BASH_ENV
-            if [ -z "$SHORT_GIT_HASH" ]; then
+            if [ -z "${SHORT_GIT_HASH:-}" ]; then
               echo "No matching container found in nivatest!"
               exit 1
             fi
