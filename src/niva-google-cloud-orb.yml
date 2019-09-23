@@ -91,6 +91,11 @@ commands:
                 echo "export SHORT_GIT_HASH=$shorthash" >> $BASH_ENV
               fi
             done
+            source $BASH_ENV
+            if [ -z "$SHORT_GIT_HASH" ]; then
+              echo "No matching container found in nivatest!"
+              exit 1
+            fi
   pull_containers:
     description: "A command to pull containers, it expects one file in the workspace: all_containers. This file
     should have a container name on each line"
