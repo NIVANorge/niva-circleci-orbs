@@ -13,8 +13,19 @@ persist-checkout: &persist-checkout
 
 executors:
   google-sdk-container:
+    parameters:
+      resource-class:
+        default: medium
+        enum:
+          - small
+          - medium
+          - medium+
+          - large
+          - xlarge
+        type: enum
     docker:
       - image: google/cloud-sdk:latest
+    resource_class: <<parameters.resource-class>>
   linux-machine:
     machine:
       image: ubuntu-1604:201903-01
@@ -238,7 +249,9 @@ jobs:
       - run_pytest_docker
   build_containers:
     description: "This command builds the containers listed in the container-file, defaults to file called: all_containers"
-    executor: google-sdk-container
+    executor:
+      name: google-sdk-container
+      resource-class: large
     steps:
       - *fast-checkout
       - setup_remote_docker
@@ -246,7 +259,9 @@ jobs:
           container-file: "changed_containers"
   build_and_push_to_nivatest:
     description: "This command builds all containers and pushes them to nivatest"
-    executor: google-sdk-container
+    executor:
+      name: google-sdk-container
+      resource-class: large
     steps:
       - *fast-checkout
       - setup_remote_docker
