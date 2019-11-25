@@ -59,7 +59,7 @@ commands:
             gcloud --quiet auth configure-docker
             set -x
             set -o nounset
-            pyenv local 3.6.5 2.7.12
+            pyenv local 3.7.0 2.7.12
             python3 -m venv venv
             . venv/bin/activate
             pip install -r requirements.txt
