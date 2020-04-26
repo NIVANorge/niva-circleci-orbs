@@ -39,6 +39,24 @@ commands:
   run_pytest_docker:
     description: "Run 'pytest -m docker'"
     steps:
+      - restore_cache:
+          keys:
+            # when lock file changes, use increasingly general patterns to restore cache
+            - pip-packages-v1-{{ checksum "requirements.txt" }}
+            - pip-packages-v1-
+      - run:
+          name: Run 'pytest -m docker'
+          command: |
+            set -x
+            set -o nounset
+            pyenv local 3.7.0 2.7.12
+            python3 -m venv python3_venv
+            . python3_venv/bin/activate
+            pip install -r requirements.txt
+      - save_cache:
+          paths:
+            - python3_venv
+          key: pip-packages-v1-{{ checksum "requirements.txt" }}
       - run:
           name: Run 'pytest -m docker'
           command: |
@@ -46,12 +64,8 @@ commands:
             set -o nounset
             gcloud auth activate-service-account --key-file test-gcloud-service-key.json
             gcloud --quiet auth configure-docker
-            set -x
-            set -o nounset
             pyenv local 3.7.0 2.7.12
-            python3 -m venv venv
-            . venv/bin/activate
-            pip install -r requirements.txt
+            . python3_venv/bin/activate
             pip install .
             sed -i -f circle_ci_files/sed_subber_docker_compose $(grep -oP "'--docker-compose'\s'\K([^']*)(?=')" pytest.ini)
             pytest -m docker
