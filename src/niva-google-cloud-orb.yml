@@ -37,7 +37,7 @@ commands:
             # Update the package list and install the Cloud SDK
             sudo apt-get update && sudo apt-get install google-cloud-sdk
   run_pytest_docker:
-    description: "Run 'pytest -m docker'"
+    description: "Install dependencies and run 'pytest -m docker'"
     steps:
       - restore_cache:
           keys:
@@ -45,7 +45,7 @@ commands:
             - pip-packages-v1-{{ checksum "requirements.txt" }}
             - pip-packages-v1-
       - run:
-          name: Run 'pytest -m docker'
+          name: Install dependencies
           command: |
             set -x
             set -o nounset
