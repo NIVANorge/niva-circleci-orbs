@@ -36,6 +36,11 @@ commands:
 
             # Update the package list and install the Cloud SDK
             sudo apt-get update && sudo apt-get install google-cloud-sdk
+  setup_docker:
+    description: "sets up remote docker with a pinned version"
+    steps:
+      - setup_remote_docker:
+          version: 19.03.13
   run_pytest_docker:
     description: "Install dependencies and run 'pytest -m docker'"
     steps:
@@ -257,7 +262,7 @@ jobs:
     executor: google-sdk-container
     steps:
       - *fast-checkout
-      - setup_remote_docker
+      - setup_docker
       - build_containers:
           container-file: "changed_containers"
   build_and_push_to_nivatest:
@@ -265,7 +270,7 @@ jobs:
     executor: google-sdk-container
     steps:
       - *fast-checkout
-      - setup_remote_docker
+      - setup_docker
       - build_containers
       - push_containers
       - *persist-checkout
@@ -273,7 +278,7 @@ jobs:
     executor: google-sdk-container
     steps:
       - *fast-checkout
-      - setup_remote_docker
+      - setup_docker
       - setup_container_transfer
       - pull_containers:
           tag: $SHORT_GIT_HASH
