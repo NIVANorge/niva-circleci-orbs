@@ -57,6 +57,7 @@ commands:
             pyenv local 3.7.0 2.7.12
             python3 -m venv python3_venv
             . python3_venv/bin/activate
+            pip install --upgrade pip
             pip install -r requirements.txt
       - save_cache:
           paths:
