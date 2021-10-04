@@ -9,7 +9,7 @@ workflows:
       - orb-tools/publish:
           orb-path: src/niva-google-cloud-orb.yml
           orb-ref: nivanorge/niva-google-cloud-orb@dev:${CIRCLE_BRANCH}
-          publish-token-variable: "$CIRCLECI_DEV_API_TOKEN"
+          publish-token-variable: "$CIRCLECI_ZOFIA_API_TOKEN"
           validate: true
           filters:
             branches:
@@ -17,7 +17,7 @@ workflows:
       - orb-tools/increment:
           orb-path: src/niva-google-cloud-orb.yml
           orb-ref: nivanorge/niva-google-cloud-orb
-          publish-token-variable: "$CIRCLECI_DEV_API_TOKEN"
+          publish-token-variable: "$CIRCLECI_ZOFIA_API_TOKEN"
           validate: true
           segment: patch
           filters:
