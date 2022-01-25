@@ -17,7 +17,7 @@ executors:
       - image: google/cloud-sdk:latest
   linux-machine:
     machine:
-      image: ubuntu-1604:201903-01
+      image: ubuntu-2004:202111-02
 
 commands:
   install_gcloud:
@@ -44,37 +44,26 @@ commands:
   run_pytest_docker:
     description: "Install dependencies and run 'pytest -m docker'"
     steps:
-      - restore_cache:
-          keys:
-            # when lock file changes, use increasingly general patterns to restore cache
-            - pip-packages-v1-{{ checksum "requirements.txt" }}
-            - pip-packages-v1-
-      - run:
-          name: Install dependencies
-          command: |
-            set -x
-            set -o nounset
-            pyenv local 3.7.0 2.7.12
-            python3 -m venv python3_venv
-            . python3_venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements.txt
-      - save_cache:
-          paths:
-            - python3_venv
-          key: pip-packages-v1-{{ checksum "requirements.txt" }}
       - run:
           name: Run 'pytest -m docker'
           command: |
             set -x
-            set -o nounset
             gcloud auth activate-service-account --key-file test-gcloud-service-key.json
             gcloud --quiet auth configure-docker
-            pyenv local 3.7.0 2.7.12
-            . python3_venv/bin/activate
-            pip install .
-            sed -i -f circle_ci_files/sed_subber_docker_compose $(grep -oP "'--docker-compose'\s'\K([^']*)(?=')" pytest.ini)
-            pytest -m docker
+            source circle_ci_files/docker_directories
+            cat circle_ci_files/changed_containers | while read container; do
+              echo "Running pytest for: $container from directory: ${docker_directories[$container]}"
+              cd ${docker_directories[$container]}
+              pyenv global 3.9.7
+              python -m venv venv
+              . venv/bin/activate
+              pip install --upgrade pip
+              pip install -r requirements.txt
+              pip install .
+              sed -i -f ../circle_ci_files/sed_subber_docker_compose $(grep -oP "'--docker-compose'\s'\K([^']*)(?=')" pytest.ini)
+              pytest -m docker
+              cd ..
+            done
   setup_nivatest:
     description: "A command to configure google cloud to use the nivatest-environment"
     steps:
