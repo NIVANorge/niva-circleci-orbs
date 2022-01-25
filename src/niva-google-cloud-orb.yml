@@ -45,7 +45,7 @@ commands:
     description: "Install dependencies and run 'pytest -m docker'"
     steps:
       - run:
-          name: Run 'pytest -m docker'
+          name: Run 'pytest'
           command: |
             set -x
             gcloud auth activate-service-account --key-file test-gcloud-service-key.json
@@ -61,7 +61,7 @@ commands:
               pip install -r requirements.txt
               pip install .
               sed -i -f ../circle_ci_files/sed_subber_docker_compose $(grep -oP "'--docker-compose'\s'\K([^']*)(?=')" pytest.ini)
-              pytest -m docker
+              pytest
               cd ..
             done
   setup_nivatest:
