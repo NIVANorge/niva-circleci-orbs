@@ -36,6 +36,7 @@ commands:
 
             # Update the package list and install the Cloud SDK
             sudo apt-get update && sudo apt-get install google-cloud-sdk
+            gcloud components install gke-gcloud-auth-plugin
   setup_docker:
     description: "sets up remote docker with a pinned version"
     steps:
