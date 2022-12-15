@@ -204,7 +204,6 @@ commands:
             set -o nounset
             echo ${<< parameters.service_key >>} | base64 --decode --ignore-garbage > gcloud-service-key.json
             set -x
-            sudo apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
             gcloud auth activate-service-account --key-file gcloud-service-key.json
             gcloud --quiet config set project ${<< parameters.project >>}
             gcloud --quiet config set compute/zone $GCLOUD_COMPUTE_ZONE
@@ -295,6 +294,7 @@ jobs:
     executor: google-sdk-container
     steps:
       - *fast-checkout
+      - install_gcloud
       - deploy_to_k8s:
           service_key: NIVATEST_SERVICE_KEY
           project: NIVATEST_PROJECT_NAME
