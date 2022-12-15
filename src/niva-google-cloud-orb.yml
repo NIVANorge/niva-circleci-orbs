@@ -204,7 +204,7 @@ commands:
             set -o nounset
             echo ${<< parameters.service_key >>} | base64 --decode --ignore-garbage > gcloud-service-key.json
             set -x
-            apt-get install google-cloud-sdk-gke-gcloud-auth-plugin
+            export USE_GKE_GCLOUD_AUTH_PLUGIN=True
             gcloud auth activate-service-account --key-file gcloud-service-key.json
             gcloud --quiet config set project ${<< parameters.project >>}
             gcloud --quiet config set compute/zone $GCLOUD_COMPUTE_ZONE
